@@ -1,0 +1,13 @@
+Car specifications
+
+- Mark: Smart
+- Model: #3
+- Engine: 66 kWh AWD BEV
+- Start of production: 2023
+- End of production: 2026
+- Country: Germany
+- Torque: 200 Нм
+- Power: 428 HP
+- Weight: 1910 kg
+- 0-100 km/h: 3.7 s
+- Top speed: 180 km/h

@@ -1,0 +1,19 @@
+beautifulsoup4
+python-dotenv
+requests
+Pillow
+pycountry
+duckduckgo-search
+rembg[cpu]
+huggingface_hub
+openai
+replicate
+
+# Локальная генерация авто (бесплатно, без лимитов):
+# pip install torch diffusers transformers accelerate
+# FLUX.1-schnell (лучше качество, ~8 GB VRAM): set LOCAL_AI_MODEL=flux
+# По умолчанию — Stable Diffusion v1.5 (меньше VRAM).
+# torch
+# diffusers
+# transformers
+# accelerate
