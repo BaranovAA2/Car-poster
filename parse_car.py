@@ -71,8 +71,13 @@ SPEC_LABELS = {
     "Мощность (л.с.)": ["мощность", "какая мощность двигателя", "какая мощность"],
     "Вес (кг)": [
         "снаряженная масса автомобиля",
+        "снаряженная масса",
         "сколько весит автомобиль",
         "сколько весит",
+        "масса автомобиля",
+        "вес автомобиля",
+        "масса",
+        "curb weight",
     ],
     "Разгон 0–100 км/ч": [
         "время разгона 0 - 100 км/ч",
@@ -759,7 +764,9 @@ def fill_missing_specs_from_llm(specs: dict, verbose: bool = True) -> dict:
 
     groq_key = (os.environ.get("GROQ_API_KEY") or "").strip()
     if not groq_key:
-        return specs  # Только Groq: без ключа пропускаем LLM, заполнит DuckDuckGo/веб
+        if verbose and to_fetch:
+            print("  [LLM] Пропуск: задайте GROQ_API_KEY в .env, чтобы запрашивать недостающие данные у Groq.")
+        return specs  # Без ключа пропускаем LLM, заполнит DuckDuckGo/веб
 
     prompt = (
         f"You are a car expert. For this exact car provide ONLY the requested specs. "
