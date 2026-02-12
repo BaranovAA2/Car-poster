@@ -3,8 +3,9 @@
 Запуск: двойной щелчок по download_model.bat или по этому файлу (если .py открывается в Python);
         или из cmd: python download_model.py
 
-Модель сохраняется в кэш Hugging Face (например C:\\Users\\...\\.cache\\huggingface\\hub).
-После скачивания poster.py и parse_car.py будут использовать её без повторной загрузки.
+Модель сохраняется в кэш Hugging Face. По умолчанию кэш на диске D: (D:\\huggingface_cache).
+Чтобы изменить путь — задайте в .env: HF_HOME=E:\\мой_кэш (или другой диск/папка).
+После скачивания poster.py будет использовать модель без повторной загрузки.
 
 Для FLUX: создайте в папке проекта файл .env с одной строкой: HF_TOKEN=ваш_токен
 """
@@ -25,6 +26,9 @@ def main():
     except Exception:
         pass
 
+    # Кэш Hugging Face (FLUX/SD) на диск D, если не задан HF_HOME в .env или системе
+    if "HF_HOME" not in os.environ or not os.environ.get("HF_HOME", "").strip():
+        os.environ["HF_HOME"] = "D:\\huggingface_cache"
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     choice = (os.environ.get("LOCAL_AI_MODEL", "sd") or "sd").strip().lower()
     token = os.environ.get("HF_TOKEN", "").strip() or os.environ.get("HUGGINGFACEHUB_API_TOKEN", "").strip() or None

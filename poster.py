@@ -17,6 +17,10 @@ try:
 except ImportError:
     pass
 
+# Кэш Hugging Face (FLUX/SD) на диск D, если не задан HF_HOME в .env или системе
+if "HF_HOME" not in os.environ or not os.environ.get("HF_HOME", "").strip():
+    os.environ["HF_HOME"] = "D:\\huggingface_cache"
+
 import requests
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -82,6 +86,19 @@ def _get_local_pipeline():
     global _local_diffusers_pipeline
     if _local_diffusers_pipeline is not None:
         return _local_diffusers_pipeline
+    import traceback
+    try:
+        _get_local_pipeline_impl()
+    except Exception as e:
+        print("[Local AI] Ошибка загрузки модели (см. ниже). Чтобы постер создавался без локальной нейросети, в .env задайте USE_LOCAL_AI=0")
+        traceback.print_exc()
+        raise
+    return _local_diffusers_pipeline
+
+
+def _get_local_pipeline_impl():
+    """Внутренняя реализация загрузки пайплайна."""
+    global _local_diffusers_pipeline
     # Убираем предупреждение про symlinks на Windows (кэш Hugging Face всё равно работает)
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     import torch
@@ -134,6 +151,7 @@ def _get_local_pipeline():
                     pipe.enable_model_cpu_offload()
                 pipe._is_flux = True
                 _local_diffusers_pipeline = pipe
+                print(f"[Local AI] Используется FLUX: {flux_id}")
                 return pipe
 
     # Stable Diffusion (по умолчанию)
@@ -155,6 +173,7 @@ def _get_local_pipeline():
             pipe = pipe.to("cpu")
     pipe._is_flux = False
     _local_diffusers_pipeline = pipe
+    print(f"[Local AI] Используется Stable Diffusion: {model_id}")
     return pipe
 
 
@@ -268,33 +287,22 @@ def generate_car_image_ai(
 
     year_part = year_start or year_end or ""
     car_desc = " ".join(filter(None, [year_part, brand, model, modification])).strip() or "car"
-    # Короткий промпт для локальной генерации: "Модель авто on white background, Three quarters car"
-    prompt = f"{car_desc} on white background, Three quarters car"
+    prompt = (
+        f"{car_desc} on white background, full size three quarters car, "
+        "front three quarter view, hood visible, grille visible, no trunk, no rear view, no tailgate"
+    )
+    if verbose:
+        print(f"[Car image prompt] {prompt}")
 
     img_bytes_or_url = None
-
-    # 1) Локальная генерация (diffusers) — бесплатно и без лимитов, модель на вашем ПК
-    use_local = os.environ.get("USE_LOCAL_AI", "1").strip().lower() in ("1", "true", "yes")
-    if use_local and img_bytes_or_url is None:
-        try:
-            pil_img = _generate_car_image_local_diffusers(prompt, verbose=verbose)
-            if pil_img is not None:
-                buf = BytesIO()
-                pil_img.save(buf, "PNG")
-                img_bytes_or_url = buf.getvalue()
-        except Exception as e:
-            if verbose:
-                print(f"Local diffusers car image failed: {e}")
-            img_bytes_or_url = None
-
-    # 2) Hugging Face Inference API — бесплатно (есть лимиты), токен на huggingface.co
     hf_token = os.environ.get("HUGGINGFACEHUB_API_TOKEN", "").strip() or os.environ.get("HF_TOKEN", "").strip()
+
+    # 1) Hugging Face Inference API — в приоритете (бесплатно, токен на huggingface.co)
     if hf_token and img_bytes_or_url is None:
         try:
             from huggingface_hub import InferenceClient
             if verbose:
                 print("Generating car image via Hugging Face (free)...")
-            # FLUX.1-schnell или SDXL — бесплатные на serverless
             for model_id in ("black-forest-labs/FLUX.1-schnell", "stabilityai/stable-diffusion-xl-base-1.0"):
                 try:
                     client = InferenceClient(model=model_id, token=hf_token)
@@ -309,6 +317,20 @@ def generate_car_image_ai(
         except Exception as e:
             if verbose:
                 print(f"Hugging Face car image failed: {e}")
+            img_bytes_or_url = None
+
+    # 2) Локальная генерация (diffusers) — бесплатно, модель на вашем ПК
+    use_local = os.environ.get("USE_LOCAL_AI", "1").strip().lower() in ("1", "true", "yes")
+    if use_local and img_bytes_or_url is None:
+        try:
+            pil_img = _generate_car_image_local_diffusers(prompt, verbose=verbose)
+            if pil_img is not None:
+                buf = BytesIO()
+                pil_img.save(buf, "PNG")
+                img_bytes_or_url = buf.getvalue()
+        except Exception as e:
+            if verbose:
+                print(f"Local diffusers car image failed: {e}")
             img_bytes_or_url = None
 
     # 3) OpenAI (ChatGPT / DALL·E 3) — платно
@@ -483,12 +505,14 @@ def fetch_car_image_from_web(
     min_size = 3000
     min_width = 150
     img = None
-    # В приоритете вид три четверти (3/4), затем сбоку и профиль
+    # Капот виден, багажник не виден: в приоритете передний 3/4, вид спереди
     for query in (
-        f"{base_query} car 3/4 view",
-        f"{base_query} car three quarter view",
+        f"{base_query} car front three quarter view hood",
+        f"{base_query} car front 3/4 view",
+        f"{base_query} car front angle hood grille",
+        f"{base_query} car 3/4 front view",
+        f"{base_query} car three quarter view front",
         f"{base_query} car side view",
-        f"{base_query} car profile",
         f"{base_query} car",
     ):
         if verbose and not img:
@@ -563,7 +587,11 @@ def _get_flag_image(country_name: str, size: tuple[int, int] = (80, 60)) -> "Ima
     cache_path = FLAG_CACHE_DIR / f"{code}_{size[0]}x{size[1]}.png"
     try:
         if cache_path.exists():
-            return Image.open(cache_path).convert("RGBA")
+            img = Image.open(cache_path).convert("RGBA")
+            # Файл мог быть сохранён скриптом fetch_flags в размере w80 (не 48x36) — всегда ресайзим под рамку
+            if img.size != size:
+                img = img.resize(size, Image.Resampling.LANCZOS)
+            return img
         # Запрашиваем стандартный размер (w80 поддерживается), затем ресайз
         url = f"https://flagcdn.com/w80/{code}.png"
         r = requests.get(url, headers=REQUEST_HEADERS, timeout=5)

@@ -1,1 +1,24 @@
 
+# Виртуальное окружение
+venv/
+.venv/
+env/
+
+# Python — кэш и сборки
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+.eggs/
+*.egg-info/
+*.egg
+
+# Папки car_specs, car_posters, cars — в репозитории (не игнорируем)
+
+# Временное и системное
+cookies.txt
+*.log
+.DS_Store
+Thumbs.db

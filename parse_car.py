@@ -45,6 +45,7 @@ CAR_SPECS_DIR = BASE_DIR / "car_specs"  # папка для сохранения
 CAR_POSTERS_IMAGES_DIR = BASE_DIR / "car_posters" / "_car_images"  # кэш фото авто (со страницы или из сети)
 
 BASE_URL = "https://www.auto-data.net/ru"
+ALLBRANDS_URL = "https://www.auto-data.net/ru/allbrands"  # полный список марок для поиска по названию
 
 # Заголовки для запроса (сайт может блокировать без User-Agent)
 REQUEST_HEADERS = {
@@ -223,28 +224,30 @@ def _soup_from_url(url: str) -> BeautifulSoup | None:
 
 def get_brand_url(brand_name: str) -> str | None:
     """
-    По названию марки (например, Acura) находит URL страницы марки на auto-data.net/ru.
-    Загружает главную и ищет ссылку вида /ru/{slug}-brand-{id}.
+    По названию марки (например, Acura, XPENG) находит URL страницы марки на auto-data.net/ru.
+    Ищет марку на странице allbrands (полный каталог марок).
     """
     brand_norm = _normalize(brand_name).replace(" ", "-")
+    brand_norm_spaces = _normalize(brand_name)
     try:
-        html = _fetch_html(BASE_URL + "/")
+        html = _fetch_html(ALLBRANDS_URL)
         soup = BeautifulSoup(html, "html.parser")
         for a in soup.find_all("a", href=True):
             href = a.get("href", "")
-            if "-brand-" in href and href.startswith("/ru/"):
-                full = urljoin(BASE_URL + "/", href)
-                path_lower = href.lower()
-                if brand_norm in path_lower or _normalize(brand_name).replace("-", " ") in _normalize(a.get_text() or ""):
-                    return full
-                if path_lower.replace("-", " ").startswith(brand_norm.replace("-", " ")):
-                    return full
-        for a in soup.find_all("a", href=True):
-            href = a.get("href", "")
-            if "-brand-" in href and href.startswith("/ru/"):
-                text_norm = _normalize(a.get_text() or "")
-                if brand_norm.replace("-", " ") in text_norm or text_norm.startswith(brand_norm.replace("-", " ")):
-                    return urljoin(BASE_URL + "/", href)
+            if "-brand-" not in href or not href.startswith("/ru/"):
+                continue
+            text = (a.get_text() or "").strip()
+            text_norm = _normalize(text)
+            path_lower = href.lower()
+            # Точное совпадение по тексту ссылки (Audi, XPENG, Alfa Romeo)
+            if text_norm == brand_norm_spaces or text_norm == brand_norm.replace("-", " "):
+                return urljoin(BASE_URL + "/", href)
+            # Текст ссылки начинается с введённой марки или содержит её
+            if text_norm.startswith(brand_norm_spaces) or brand_norm_spaces in text_norm:
+                return urljoin(BASE_URL + "/", href)
+            # Совпадение по slug в URL
+            if brand_norm in path_lower or path_lower.replace("-", " ").startswith(brand_norm.replace("-", " ")):
+                return urljoin(BASE_URL + "/", href)
     except Exception:
         pass
     return None
@@ -318,7 +321,7 @@ def collect_all_modification_urls_for_brand(brand_name: str, verbose: bool = Tru
     brand_url = get_brand_url(brand_name)
     if not brand_url:
         if verbose:
-            print(f"Марка «{brand_name}» не найдена на {BASE_URL}")
+            print(f"Марка «{brand_name}» не найдена на {ALLBRANDS_URL}")
         return []
     if verbose:
         print(f"Марка: {brand_url}")
@@ -574,14 +577,21 @@ def _get_country_from_wikipedia(brand: str) -> str:
 
 
 def _get_country_by_brand(brand: str) -> str:
-    """Определяет страну по марке: в приоритете поиск в интернете (Wikipedia), затем справочник."""
+    """Определяет страну по марке: Wikipedia → COUNTRY_BY_BRAND → полный список из fetch_flags_for_brands."""
     if not brand or not brand.strip():
         return ""
     key = _normalize(brand.strip())
     country = _get_country_from_wikipedia(brand)
     if country:
         return country
-    return COUNTRY_BY_BRAND.get(key, "")
+    country = COUNTRY_BY_BRAND.get(key, "")
+    if country:
+        return country
+    try:
+        from fetch_flags_for_brands import BRAND_TO_COUNTRY
+        return BRAND_TO_COUNTRY.get(key, "")
+    except Exception:
+        return ""
 
 
 def _format_top_speed(raw: str) -> str:
